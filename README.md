@@ -47,7 +47,7 @@ Tested against **AutoCAD 2027 (R26, `26.0s`)** on Windows 11. Other full AutoCAD
 ### From a wheel
 
 ```powershell
-pipx install autocad_mcp-3.1.0-py3-none-any.whl
+pipx install https://github.com/2011585528/autocad-mcp/releases/download/v3.1.0/autocad_mcp-3.1.0-py3-none-any.whl
 ```
 
 ### From source
