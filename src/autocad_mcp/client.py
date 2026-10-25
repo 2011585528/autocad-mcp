@@ -41,14 +41,20 @@ async def get_backend() -> AutoCADBackend:
 
         backend_name = detect_backend()
 
-        if backend_name == "file_ipc":
+        if backend_name == "com":
+            from autocad_mcp.backends.com_backend import ComBackend
+
+            backend = ComBackend()
+        elif backend_name == "file_ipc":
             from autocad_mcp.backends.file_ipc import FileIPCBackend
 
             backend = FileIPCBackend()
-        else:
+        elif backend_name == "ezdxf":
             from autocad_mcp.backends.ezdxf_backend import EzdxfBackend
 
             backend = EzdxfBackend()
+        else:
+            raise RuntimeError(f"Unknown backend selected: {backend_name!r}")
 
         result = await backend.initialize()
         if not result.ok:
@@ -57,6 +63,25 @@ async def get_backend() -> AutoCADBackend:
         _backend = backend
         log.info("backend_initialized", backend=_backend.name)
         return _backend
+
+
+async def reset_backend() -> None:
+    """Dispose the current backend (if it can be closed) and clear the singleton.
+
+    The next get_backend() call re-runs detection, which lets the server
+    switch backends without restarting the process.
+    """
+    global _backend
+
+    async with _init_lock:
+        old = _backend
+        _backend = None
+        close = getattr(old, "close", None)
+        if old is not None and close is not None:
+            try:
+                await close()
+            except Exception as e:
+                log.warning("backend_close_failed", backend=old.name, error=str(e))
 
 
 # ---------------------------------------------------------------------------

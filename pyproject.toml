@@ -1,7 +1,7 @@
 [project]
 name = "autocad-mcp"
-version = "3.0.0"
-description = "MCP server for AutoCAD LT automation and headless DXF generation"
+dynamic = ["version"]
+description = "MCP server for AutoCAD automation (COM / File IPC) and headless DXF generation"
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.10"
@@ -13,17 +13,35 @@ dependencies = [
     "structlog>=24.0.0",
     "pywin32>=305; sys_platform == 'win32'",
 ]
+
+[project.optional-dependencies]
 dev = [
     "pytest>=7.0",
     "pytest-asyncio>=0.21",
 ]
 
+[project.scripts]
+autocad-mcp = "autocad_mcp.server:main"
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+[tool.hatch.version]
+path = "src/autocad_mcp/__init__.py"
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/autocad_mcp"]
+
+[tool.hatch.build.targets.sdist]
+exclude = [
+    ".backup-*",
+    ".venv",
+    ".pytest_cache",
+    "dist",
+    "**/__pycache__",
+    "**/*.pyc",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

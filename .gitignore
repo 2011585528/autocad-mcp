@@ -51,6 +51,9 @@ Thumbs.db
 # Log files
 *.log
 
+# Local backups created before edits
+.backup-*/
+
 # Claude Code
 .claude/
 

@@ -1,3 +1,3 @@
-"""AutoCAD MCP Server v3.0 — File IPC + ezdxf headless backend."""
+"""AutoCAD MCP Server — COM + File IPC + ezdxf backends."""
 
-__version__ = "3.0.0"
+__version__ = "3.1.0"

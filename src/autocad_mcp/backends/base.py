@@ -46,7 +46,7 @@ class AutoCADBackend(ABC):
     @property
     @abstractmethod
     def name(self) -> str:
-        """Backend identifier: 'file_ipc' or 'ezdxf'."""
+        """Backend identifier: 'com', 'file_ipc' or 'ezdxf'."""
 
     @property
     @abstractmethod
@@ -226,6 +226,9 @@ class AutoCADBackend(ABC):
         return CommandResult(ok=False, error="Not supported on this backend")
 
     async def create_dimension_radius(self, cx: float, cy: float, radius: float, angle: float) -> CommandResult:
+        return CommandResult(ok=False, error="Not supported on this backend")
+
+    async def create_dimension_diameter(self, cx: float, cy: float, radius: float, angle: float = 0.0) -> CommandResult:
         return CommandResult(ok=False, error="Not supported on this backend")
 
     async def create_leader(self, points: list[list[float]], text: str) -> CommandResult:

@@ -300,6 +300,7 @@ async def annotation(
       create_dimension_aligned — data: {x1, y1, x2, y2, offset}
       create_dimension_angular — data: {cx, cy, x1, y1, x2, y2}
       create_dimension_radius — data: {cx, cy, radius, angle}
+      create_dimension_diameter — data: {cx, cy, radius, angle?} (COM backend)
       create_leader           — data: {points: [[x,y],...], text}
     """
     data = data or {}
@@ -325,6 +326,10 @@ async def annotation(
     elif operation == "create_dimension_radius":
         result = await backend.create_dimension_radius(
             data["cx"], data["cy"], data["radius"], data["angle"],
+        )
+    elif operation == "create_dimension_diameter":
+        result = await backend.create_dimension_diameter(
+            data["cx"], data["cy"], data["radius"], data.get("angle", 0.0),
         )
     elif operation == "create_leader":
         result = await backend.create_leader(data["points"], data["text"])
@@ -472,8 +477,8 @@ async def system(
       health        — Quick health check (ping backend).
       get_backend   — Return current backend name and capabilities.
       runtime       — Return process/runtime details for spawn diagnostics.
-      init          — Re-initialize the backend.
-      execute_lisp  — Execute arbitrary AutoLISP code (File IPC only). data: {code}
+      init          — Re-initialize / reconnect the backend (re-runs detection).
+      execute_lisp  — Execute arbitrary AutoLISP code. data: {code}
     """
     data = data or {}
 
@@ -503,9 +508,11 @@ async def system(
             }
         )
     elif operation == "init":
-        # Force re-initialization
+        # Force re-initialization (disposes the old backend so its worker
+        # thread / IPC state is released, then re-runs backend detection).
         from autocad_mcp import client
-        client._backend = None
+
+        await client.reset_backend()
         backend = await get_backend()
         result = await backend.status()
         return _json(result.to_dict())
@@ -546,5 +553,7 @@ def main():
         ],
     )
 
-    log.info("autocad_mcp_starting", version="3.1.0")
+    from autocad_mcp import __version__
+
+    log.info("autocad_mcp_starting", version=__version__)
     mcp.run(transport="stdio")
