@@ -1,25 +1,22 @@
 # AutoCAD MCP Server
 
-MCP server for AutoCAD automation and headless DXF generation.
+MCP server for AutoCAD LT automation and headless DXF generation.
 
-Three backends, one API:
+Two backends, one API:
 
 | Backend | Runtime | Requires AutoCAD? | Screenshot |
 |---------|---------|-------------------|------------|
-| **COM** | Windows Python | Yes — full AutoCAD (not LT) | Win32 PrintWindow |
 | **File IPC** | Windows Python | Yes — AutoCAD LT 2024+ (Windows) | Win32 PrintWindow |
 | **ezdxf** | Any platform | No (headless) | matplotlib render |
 
-`auto` prefers **COM** when full AutoCAD's COM server is registered, then File IPC if an AutoCAD window is open, then ezdxf. The COM backend can launch AutoCAD by itself and needs no LISP dispatcher, so there is nothing to load manually.
+The server exposes **8 consolidated tools** (`drawing`, `entity`, `layer`, `block`, `annotation`, `pid`, `view`, `system`) over the MCP stdio transport. An MCP client (Claude Desktop, Claude Code, etc.) connects and drives AutoCAD through natural-language requests.
 
-The server exposes **8 consolidated tools** (`drawing`, `entity`, `layer`, `block`, `annotation`, `pid`, `view`, `system`) over the MCP stdio transport. Any MCP client (Claude Code, Codex, Cursor, Windsurf, Zed, …) can connect and drive AutoCAD through natural-language requests.
+## Prerequisites (File IPC backend)
 
-## Prerequisites
-
-- **Windows 10/11** for the COM and File IPC backends (they use Win32 APIs)
-- **Full AutoCAD** for the COM backend (AutoCAD LT has no ActiveX/COM automation). `AUTOCAD_MCP_COM_AUTOLAUNCH=1` (default) lets the server start AutoCAD when it is not running.
-- **AutoCAD LT 2024 or newer** for the File IPC backend — AutoLISP support was added in LT 2024 for Windows. AutoCAD LT for Mac exists but does **not** support AutoLISP.
+- **Windows 10/11** (the File IPC backend uses Win32 APIs for focus-free window messaging)
+- **AutoCAD LT 2024 or newer** — AutoLISP support was added in LT 2024 for Windows. AutoCAD LT for Mac exists but does **not** support AutoLISP.
 - **Python 3.10+** (Windows native — not WSL Python)
+- **uv** package manager ([install guide](https://docs.astral.sh/uv/getting-started/installation/))
 
 > The ezdxf headless backend works on any platform (Linux, macOS, WSL) for offline DXF generation without AutoCAD installed.
 
@@ -33,16 +30,7 @@ cd autocad-mcp
 uv sync
 ```
 
-Or install it as a standalone command for any MCP client:
-
-```powershell
-pipx install .            # or: uvx --from . autocad-mcp
-autocad-mcp               # stdio server on stdin/stdout
-```
-
-### 2. Load the LISP dispatcher in AutoCAD LT (File IPC backend only)
-
-**COM backend users can skip this step** — COM talks to AutoCAD directly and does not need `mcp_dispatch.lsp`.
+### 2. Load the LISP dispatcher in AutoCAD LT
 
 Open AutoCAD LT and load `mcp_dispatch.lsp` using **APPLOAD**:
 
@@ -55,26 +43,12 @@ Open AutoCAD LT and load `mcp_dispatch.lsp` using **APPLOAD**:
 
 ### 3. Configure your MCP client
 
-Using the installed console script (works for any MCP client):
+Add to your MCP client configuration (e.g. Claude Desktop `claude_desktop_config.json`):
 
 ```json
 {
   "mcpServers": {
-    "autocad": {
-      "command": "autocad-mcp",
-      "args": [],
-      "env": { "AUTOCAD_MCP_BACKEND": "auto" }
-    }
-  }
-}
-```
-
-Or point at the project venv directly:
-
-```json
-{
-  "mcpServers": {
-    "autocad": {
+    "autocad-mcp": {
       "command": "C:\\path\\to\\autocad-mcp\\.venv\\Scripts\\python.exe",
       "args": ["-m", "autocad_mcp"],
       "env": { "AUTOCAD_MCP_BACKEND": "auto" }
@@ -83,25 +57,10 @@ Or point at the project venv directly:
 }
 ```
 
-Claude Code:
-
-```bash
-claude mcp add autocad -s user -- autocad-mcp
-```
-
-Codex CLI (`~/.codex/config.toml`; check your client's docs for the exact schema):
-
-```toml
-[mcp_servers.autocad]
-command = "autocad-mcp"
-args = []
-env = { AUTOCAD_MCP_BACKEND = "auto" }
-```
-
 **Key points:**
 
-- If the entry point is not on PATH, point `command` at the **Windows Python** inside the project venv (not WSL python), or use the `cmd.exe` form below.
-- `AUTOCAD_MCP_BACKEND` can be `auto` (default — COM when available, then File IPC, then ezdxf), `com` (full AutoCAD via ActiveX; fails loudly when unavailable), `file_ipc` (requires AutoCAD + dispatcher), or `ezdxf` (headless only).
+- The `command` must point to the **Windows Python** inside the project venv (not WSL python).
+- `AUTOCAD_MCP_BACKEND` can be `auto` (default — tries File IPC, falls back to ezdxf), `file_ipc` (requires AutoCAD), or `ezdxf` (headless only).
 
 #### Running from WSL
 
@@ -196,18 +155,15 @@ Screenshots use `PrintWindow` (Win32) for the File IPC backend — works even wh
 
 `status`, `health`, `get_backend`, `runtime`, `init`, `execute_lisp`
 
-> `execute_lisp` runs arbitrary AutoLISP code (COM and File IPC backends). Pass `data: {code: "(+ 1 2)"}`. On COM this is queued through `Document.SendCommand`; on File IPC it runs via the dispatcher. This turns the server into an extensible automation platform — any valid AutoLISP expression can be executed. **Security note:** it can run arbitrary code inside your AutoCAD session; only connect trusted MCP clients.
+> `execute_lisp` runs arbitrary AutoLISP code (File IPC only). Pass `data: {code: "(+ 1 2)"}`. This turns the server into an extensible automation platform — any valid AutoLISP expression can be executed.
 
 ## Architecture
 
 ```
-MCP Client (Claude Code, Codex, Cursor, …)
+MCP Client (Claude)
     │  stdio (JSON-RPC)
     ▼
 Python MCP Server (autocad_mcp)
-    │
-    ├── COM Backend ──► AutoCAD.Application (ActiveX) ──► live drawing
-    │   Single STA worker thread, serialized calls, auto-launch
     │
     ├── File IPC Backend ──► C:/temp/*.json ──► mcp_dispatch.lsp (AutoCAD LT)
     │   PostMessageW(WM_CHAR) to MDIClient — no focus steal
@@ -215,20 +171,13 @@ Python MCP Server (autocad_mcp)
     └── ezdxf Backend ──► in-memory DXF (headless, no AutoCAD needed)
 ```
 
-The COM backend talks to full AutoCAD through its out-of-process ActiveX server (`acad.exe /Automation`). All COM calls run on one dedicated STA thread and are serialized; the asyncio loop only awaits results, so slow AutoCAD work never blocks the MCP server. `GetActiveObject` attaches to a running instance, otherwise `Dispatch` starts one.
-
 The File IPC backend sends keystrokes to AutoCAD's MDIClient window via `PostMessageW(WM_CHAR)`, triggering the `(c:mcp-dispatch)` AutoLISP command. This approach does **not** steal window focus — you can continue working in other applications while automation runs.
 
 ## Environment Variables
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `AUTOCAD_MCP_BACKEND` | `auto` | Backend selection: `auto`, `com`, `file_ipc`, `ezdxf` |
-| `AUTOCAD_MCP_COM_PROGID` | `AutoCAD.Application` | COM ProgID to attach to / launch |
-| `AUTOCAD_MCP_COM_AUTOLAUNCH` | `1` | Let the server start AutoCAD when it is not running (`0` disables) |
-| `AUTOCAD_MCP_COM_CONNECT_TIMEOUT` | `90` | Seconds to wait for AutoCAD to become ready (10–300) |
-| `AUTOCAD_MCP_COM_CALL_TIMEOUT` | `60` | Timeout per COM call in seconds (1–600) |
-| `AUTOCAD_MCP_COM_RETRIES` | `3` | Retries when AutoCAD is busy (`RPC_E_CALL_REJECTED` / `RETRYLATER`) |
+| `AUTOCAD_MCP_BACKEND` | `auto` | Backend selection: `auto`, `file_ipc`, `ezdxf` |
 | `AUTOCAD_MCP_IPC_DIR` | `C:/temp` | Directory for IPC command/result JSON files (must match on both Python and LISP sides) |
 | `AUTOCAD_MCP_IPC_TIMEOUT` | `10.0` | IPC command timeout in seconds (1-300) |
 | `AUTOCAD_MCP_ONLY_TEXT` | `false` | Disable screenshot capture (text feedback only) |
@@ -258,10 +207,6 @@ The `mcp_dispatch.lsp` dispatcher is fully compatible with LT 2024+.
 
 ## What's New in v3.1
 
-- **COM backend** — drives full AutoCAD through ActiveX (`AutoCAD.Application`). Starts AutoCAD automatically, runs every call on one dedicated STA thread, retries when AutoCAD is busy, and re-attaches once if AutoCAD is closed. No LISP dispatcher is needed.
-- **Diameter dimensions** — new `annotation` operation `create_dimension_diameter` (`data: {cx, cy, radius, angle?}`), implemented with `AddDimDiametric`.
-- **Explicit backend selection** — unknown `AUTOCAD_MCP_BACKEND` values now raise instead of silently falling back to ezdxf; `system init` disposes the old backend and re-runs detection, so you can reconnect without restarting the server.
-- **Packaging** — `autocad-mcp` console entry point, version single-sourced from `src/autocad_mcp/__init__.py`.
 - **`execute_lisp`** — Run arbitrary AutoLISP code via temp file pattern. Turns the server from a fixed command set into an extensible automation platform.
 - **Undo / Redo** — Single-step undo and redo via `drawing` tool.
 - **Drawing open** — Open existing `.dwg` files programmatically (FILEDIA suppressed).
