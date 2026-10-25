@@ -34,7 +34,7 @@
 ### 使用 wheel
 
 ```powershell
-pipx install autocad_mcp-3.1.0-py3-none-any.whl
+pipx install https://github.com/2011585528/autocad-mcp/releases/download/v3.1.0/autocad_mcp-3.1.0-py3-none-any.whl
 ```
 
 ### 从源码安装
